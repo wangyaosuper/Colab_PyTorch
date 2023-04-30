@@ -19,6 +19,10 @@ from torch.utils import data
 
 import time
 
+from google.colab import drive
+import os
+
+
 
 # -------- 检测平台 --------
 def try_gpu(i=0):
@@ -117,23 +121,59 @@ class Accumulator:
         return self.data[idx]
 
 
+# ------ 存储和加载模型
+def store_model(net, optimizer, epoch, train_acc, test_acc, loss, name, path):
+    s_time = time.localtime(time.time())
+    s = str(s_time.tm_year)+"."+str(s_time.tm_mon)+"."+ \
+        str(s_time.tm_mday)+"."+str(s_time.tm_hour)+"."+ \
+        str(s_time.tm_min)+"."+str(s_time.tm_sec)
+    file_name = path+'/'+name + '.' + s + '.' + f'acc{test_acc:.3f}' + \
+            "-checkpoint.pth"
+    torch.save({
+            'epoch':epoch,
+            'train_acc':train_acc,
+            'test_acc':test_acc,
+            'loss':loss,
+            'model_name':name,
+            'model_state_dict': net.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            }, file_name)    
+    print("Success store model: " + file_name)
+
+def load_model(path, model_name, net, optimizer):
+    epoch = 0
+    for file_name in os.listdir(path):
+        if (model_name in file_name) and ("checkpoint.pth" in file_name):
+            target_name = path + "/" + file_name
+            checkpoint = torch.load(target_name)
+            if not model_name == checkpoint['model_name']:
+                continue
+            net.load_state_dict(checkpoint['model_state_dict'])
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            epoch = checkpoint['epoch']
+            test_acc = checkpoint['test_acc']
+            train_acc = checkpoint['train_acc']
+            loss = checkpoint['loss']
+            print("Load model ", file_name, f": model={model_name}, epoch={epoch}")
+            print(f"Load this model with loss={loss:.3f}, test_acc={test_acc:.3f}, train_acc={train_acc:.3f}")
+            return epoch
+    return epoch
+
+
 
 # ------ 模型训练 ------
 
-def train_ch6(net, train_iter, test_iter, num_epochs, lr, device):
-    """
-    def init_weights(m):
-        if type(m) == nn.Linear or type(m) == nn.Conv2d:
-            nn.init.xavier_uniform_(m.weight)
-    net.apply(init_weights)
-    """
+def train_ch6(net, train_iter, test_iter, num_epochs, lr, device, 
+              model_name=None, model_store_path=None, model_load_path=None):
     print("train on: ", device, " !!!!")
     net.to(device)
     optimizer = torch.optim.SGD(net.parameters(), lr=lr)
+    if model_load_path and model_name:
+        e = load_model(model_load_path, model_name, net, optimizer)
     loss = nn.CrossEntropyLoss()
     num_batches = len(train_iter)
     timer = Timer()
-    for epoch in range(num_epochs):
+    for epoch in range(e, num_epochs):
         net.train()
         metric = Accumulator(3)
         for i,(X,y) in enumerate(train_iter):
@@ -156,6 +196,15 @@ def train_ch6(net, train_iter, test_iter, num_epochs, lr, device):
                 print(f'Epoch:{epoch+(i+1)/num_batches:.3f}, train_loss:{train_l:.3f}, train_acc:{train_acc:.3f}')
         test_acc = evaluate_accuracy_gpu(net, test_iter)
         print(f'Epoch:{epoch + 1}, test_acc:{test_acc:.3f}')
+        if model_store_path and model_name:
+            store_model(net=net, optimizer=optimizer, epoch=epoch+1,
+                    train_acc = train_acc,
+                    test_acc = test_acc,
+                    loss = train_l,
+                    name=model_name, path=model_store_path)
+
+
+
     print("Train finished !!!!")
     print(f'loss {train_l:.3f}, train acc{train_acc:.3f},'
            f'test acc{test_acc:.3f}')
@@ -201,7 +250,7 @@ def create_AlexNet():
     X=layer(X)
     print(layer.__class__.__name__,'output shape:\t',X.shape)
   net.apply(init_weights)
-  return net
+  return "AlexNet", net
 
 
 class L2Pool(nn.Module):
@@ -245,7 +294,7 @@ def create_AlexNet_With_L2Pool():
     X=layer(X)
     print(layer.__class__.__name__,'output shape:\t',X.shape)
   net.apply(init_weights)
-  return net
+  return "AlexNet_With_L2Pool", net
 
 
 
@@ -275,7 +324,7 @@ def create_NinNet():
     X=layer(X)
     print(layer.__class__.__name__,'output shape:\t',X.shape)
   net.apply(init_weights)
-  return net
+  return "NinNet", net
 
 
 # ------ 新增 GoogLeNet -----
@@ -339,7 +388,7 @@ def create_GoogLeNet():
     print(layer.__class__.__name__,'output shape:\t', X.shape)
 
   net.apply(init_weights)
-  return net
+  return "GoogLeNet", net
 
 # ----------- 新增ResNet ---------
 class Residual(nn.Module):
@@ -364,7 +413,7 @@ class Residual(nn.Module):
         if self.conv3:
             X = self.conv3(X)
         Y = Y + X
-        return nn.functional.relu(Y)
+        return "ResNet", nn.functional.relu(Y)
 
 def resnet_block(input_channels, num_channels, num_residuals,
                  first_block=False):
@@ -424,23 +473,30 @@ def load_data_fashion_mnist(batch_size, resize=None):
 # ----- lab -----
 
 def main():
-  print("in main")
-  train_iter, test_iter = load_data_fashion_mnist(batch_size=128, resize=224)
+
+    drive.mount("/content/gdrive")
+
+    with open("/content/gdrive/MyDrive/model_output/colab_test.txt", "w") as f:
+        f.write("Colab test 2\n")    
+
+    print("in main")
+    train_iter, test_iter = load_data_fashion_mnist(batch_size=128, resize=224)
 
 
-  #net = create_LeNet()
-  #net = create_AlexNet()
-  #net = create_AlexNet_With_L2Pool()
-  #net = create_NinNet()
-  #net = create_GoogLeNet()
-  net = create_ResNet()
+    #model_name, net = create_LeNet()
+    model_name, net = create_AlexNet()
+    #model_name, net = create_AlexNet_With_L2Pool()
+    #model_name, net = create_NinNet()
+    #model_name, net = create_GoogLeNet()
+    #model_name, net = create_ResNet()
 
-  #time.sleep(10)
+    lr, num_epochs = 0.03, 60
 
-  lr, num_epochs = 0.03, 60
-
-  train_ch6(net, train_iter, test_iter, num_epochs, lr, try_gpu())
-  print("out main")
+    train_ch6(net, train_iter, test_iter, num_epochs, lr, try_gpu(), 
+              model_name=model_name, 
+              model_store_path="/content/gdrive/MyDrive/model_output",
+              model_load_path="/content/gdrive/MyDrive/model_load")
+    print("out main")
 
 
 
