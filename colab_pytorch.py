@@ -122,12 +122,14 @@ class Accumulator:
 
 
 # ------ 存储和加载模型
-def store_model(net, optimizer, epoch, train_acc, test_acc, loss, name, path):
+def store_model(net, optimizer, epoch, train_acc, test_acc, 
+                loss, name, path,data_set_name):
     s_time = time.localtime(time.time())
     s = str(s_time.tm_year)+"."+str(s_time.tm_mon)+"."+ \
         str(s_time.tm_mday)+"."+str(s_time.tm_hour)+"."+ \
         str(s_time.tm_min)+"."+str(s_time.tm_sec)
-    file_name = path+'/'+name + '.' + s + '.' + f'acc{test_acc:.3f}' + \
+    file_name = path+'/'+name + '.' + data_set_name + '.' + s + '.' + \
+            f'acc{test_acc:.3f}' + \
             "-checkpoint.pth"
     torch.save({
             'epoch':epoch,
@@ -137,11 +139,13 @@ def store_model(net, optimizer, epoch, train_acc, test_acc, loss, name, path):
             'model_name':name,
             'model_state_dict': net.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
+            'data_set_name': data_set_name
             }, file_name)    
     print("Success store model: " + file_name)
 
 def load_model(path, model_name, net, optimizer):
     epoch = 0
+    data_set_name = None
     for file_name in os.listdir(path):
         if (model_name in file_name) and ("checkpoint.pth" in file_name):
             target_name = path + "/" + file_name
@@ -154,22 +158,28 @@ def load_model(path, model_name, net, optimizer):
             test_acc = checkpoint['test_acc']
             train_acc = checkpoint['train_acc']
             loss = checkpoint['loss']
+            data_set_name = checkpoint['data_set_name']
             print("Load model ", file_name, f": model={model_name}, epoch={epoch}")
             print(f"Load this model with loss={loss:.3f}, test_acc={test_acc:.3f}, train_acc={train_acc:.3f}")
-            return epoch
-    return epoch
+            return epoch, data_set_name
+    return epoch, data_set_name
 
 
 
 # ------ 模型训练 ------
 
-def train_ch6(net, train_iter, test_iter, num_epochs, lr, device, 
+def train_ch6(net, train_iter, test_iter, 
+              num_epochs, lr, device, data_set_name=None, 
               model_name=None, model_store_path=None, model_load_path=None):
     print("train on: ", device, " !!!!")
     net.to(device)
     optimizer = torch.optim.SGD(net.parameters(), lr=lr)
     if model_load_path and model_name:
-        e = load_model(model_load_path, model_name, net, optimizer)
+        e, data_set_name_ = load_model(model_load_path, 
+                                       model_name, net, optimizer)
+    if data_set_name_ and (not data_set_name_ == data_set_name):
+        print("ERROR: data_set is not match the checkpoint data_set")
+        sys.exit(0)
     loss = nn.CrossEntropyLoss()
     num_batches = len(train_iter)
     timer = Timer()
@@ -201,6 +211,7 @@ def train_ch6(net, train_iter, test_iter, num_epochs, lr, device,
                     train_acc = train_acc,
                     test_acc = test_acc,
                     loss = train_l,
+                    data_set_name = data_set_name,
                     name=model_name, path=model_store_path)
 
 
@@ -413,7 +424,7 @@ class Residual(nn.Module):
         if self.conv3:
             X = self.conv3(X)
         Y = Y + X
-        return "ResNet", nn.functional.relu(Y)
+        return nn.functional.relu(Y)
 
 def resnet_block(input_channels, num_channels, num_residuals,
                  first_block=False):
@@ -439,13 +450,13 @@ def create_ResNet():
     net = nn.Sequential(b1, b2, b3, b4, b5, 
                         nn.AdaptiveAvgPool2d((1, 1)),
                         nn.Flatten(), nn.Linear(512, 10))
-    X = torch.rand(size=(1, 1, 96, 96))
+    X = torch.rand(size=(1, 1, 224, 224))
     for layer in net:
         X = layer(X)
         print(layer.__class__.__name__,'output shape:\t', X.shape)
 
     net.apply(init_weights)
-    return net
+    return "ResNet", net
 
 # ----------- 数据加载 ----------
 
@@ -454,46 +465,56 @@ def get_dataloader_workers():
     Defined in :numref:`sec_fashion_mnist`"""
     return 1
 
-def load_data_fashion_mnist(batch_size, resize=None):
+def pytorchvision_load_data(batch_size, data_set_name, resize=None):
     """Download the Fashion-MNIST dataset and then load it into memory.
     Defined in :numref:`sec_fashion_mnist`"""
-    trans = [transforms.ToTensor()]
+    trans = [transforms.Grayscale(num_output_channels=1),
+             transforms.ToTensor()]
     if resize:
         trans.insert(0, transforms.Resize(resize))
     trans = transforms.Compose(trans)
-    mnist_train = torchvision.datasets.FashionMNIST(
+    model_switcher = {
+        'FASHION_MNIST':torchvision.datasets.FashionMNIST,
+        'CIFAR_10':torchvision.datasets.CIFAR10
+    }
+    train_set = model_switcher.get(data_set_name)(
         root="../data", train=True, transform=trans, download=True)
-    mnist_test = torchvision.datasets.FashionMNIST(
+    test_set = model_switcher.get(data_set_name)(
         root="../data", train=False, transform=trans, download=True)
-    return (data.DataLoader(mnist_train, batch_size, shuffle=True,
+    return (data.DataLoader(train_set, batch_size, shuffle=True,
                             num_workers=get_dataloader_workers()),
-            data.DataLoader(mnist_test, batch_size, shuffle=False,
+            data.DataLoader(test_set, batch_size, shuffle=False,
                             num_workers=get_dataloader_workers()))
 
 # ----- lab -----
 
-def main():
+def main(model_name, data_set_name):
 
     drive.mount("/content/gdrive")
 
-    with open("/content/gdrive/MyDrive/model_output/colab_test.txt", "w") as f:
-        f.write("Colab test 2\n")    
-
     print("in main")
-    train_iter, test_iter = load_data_fashion_mnist(batch_size=128, resize=224)
+    data_set_switcher = {
+        'FASHION_MNIST': pytorchvision_load_data,
+        'CIFAR_10':pytorchvision_load_data
+    }
+    train_iter, test_iter = \
+        data_set_switcher.get(data_set_name)(batch_size=32, resize=224, 
+                                             data_set_name=data_set_name)
 
+    model_switcher = {
+        'AlexNet':create_AlexNet,
+        'AlexNet_With_L2Pool':create_AlexNet_With_L2Pool,
+        'NinNet':create_NinNet,
+        'GoogLeNet':create_GoogLeNet,
+        'ResNet':create_ResNet}
 
-    #model_name, net = create_LeNet()
-    model_name, net = create_AlexNet()
-    #model_name, net = create_AlexNet_With_L2Pool()
-    #model_name, net = create_NinNet()
-    #model_name, net = create_GoogLeNet()
-    #model_name, net = create_ResNet()
+    model_name, net = model_switcher.get(model_name)()
 
     lr, num_epochs = 0.03, 60
 
     train_ch6(net, train_iter, test_iter, num_epochs, lr, try_gpu(), 
               model_name=model_name, 
+              data_set_name=data_set_name,
               model_store_path="/content/gdrive/MyDrive/model_output",
               model_load_path="/content/gdrive/MyDrive/model_load")
     print("out main")
@@ -502,5 +523,5 @@ def main():
 
 if __name__ == "__main__":
     print("call main")
-    main()
+    main("ResNet", "CIFAR_10")
     print("main finished")
