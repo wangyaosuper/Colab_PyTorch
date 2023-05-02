@@ -17,7 +17,7 @@ import torchvision
 from torchvision import transforms
 from torch.utils import data
 
-import time
+import time,datetime,dateutil,pytz
 
 from google.colab import drive
 import os
@@ -124,10 +124,19 @@ class Accumulator:
 # ------ 存储和加载模型
 def store_model(net, optimizer, epoch, train_acc, test_acc, 
                 loss, name, path,data_set_name):
-    s_time = time.localtime(time.time())
-    s = str(s_time.tm_year)+"."+str(s_time.tm_mon)+"."+ \
+
+    shanghai = pytz.timezone("Asia/Shanghai")
+    now = datetime.datetime.now(shanghai)
+    fmt = '%Y-%m-%d %H:%M:%S %Z%z'
+    s = now.strftime(fmt)
+    """
+    #sec = now.replace(tzinfo=dateutil.tz.gettz("Asina/Shanghai")).timestamp()
+    sec = now.replace(tzinfo=pytz.timezone("Asia/Shanghai")).timestamp()
+    s_time = time.localtime(sec)
+    s = str(s_time.tm_year)[2:]+"."+str(s_time.tm_mon)+"."+ \
         str(s_time.tm_mday)+"."+str(s_time.tm_hour)+"."+ \
         str(s_time.tm_min)+"."+str(s_time.tm_sec)
+    """
     file_name = path+'/'+name + '.' + data_set_name + '.' + s + '.' + \
             f'acc{test_acc:.3f}' + \
             "-checkpoint.pth"
@@ -236,7 +245,7 @@ def create_AlexNet():
     # 这⾥使⽤⼀个11*11的更⼤窗⼝来捕捉对象。
     # 同时，步幅为4，以减少输出的⾼度和宽度。
     # 另外，输出通道的数⽬远⼤于LeNet
-    nn.Conv2d(1, 96, kernel_size=11, stride=4, padding=1), nn.ReLU(),
+    nn.Conv2d(3, 96, kernel_size=11, stride=4, padding=1), nn.ReLU(),
     nn.MaxPool2d(kernel_size=3, stride=2),
     # 减⼩卷积窗⼝，使⽤填充为2来使得输⼊与输出的⾼和宽⼀致，且增⼤输出通道数
     nn.Conv2d(96, 256, kernel_size=5, padding=2), nn.ReLU(),
@@ -256,7 +265,7 @@ def create_AlexNet():
     nn.Dropout(p=0.5),
     # 最后是输出层。由于这⾥使⽤Fashion-MNIST，所以⽤类别数为10，⽽⾮论⽂中的1000
     nn.Linear(4096, 10))
-  X = torch.randn(1, 1, 224, 224)
+  X = torch.randn(1, 3, 224, 224)
   for layer in net:
     X=layer(X)
     print(layer.__class__.__name__,'output shape:\t',X.shape)
@@ -279,7 +288,7 @@ def create_AlexNet_With_L2Pool():
     # 这⾥使⽤⼀个11*11的更⼤窗⼝来捕捉对象。
     # 同时，步幅为4，以减少输出的⾼度和宽度。
     # 另外，输出通道的数⽬远⼤于LeNet
-    nn.Conv2d(1, 96, kernel_size=11, stride=4, padding=1), nn.ReLU(),
+    nn.Conv2d(3, 96, kernel_size=11, stride=4, padding=1), nn.ReLU(),
     nn.MaxPool2d(kernel_size=3, stride=2),
     # 减⼩卷积窗⼝，使⽤填充为2来使得输⼊与输出的⾼和宽⼀致，且增⼤输出通道数
     nn.Conv2d(96, 256, kernel_size=5, padding=2), nn.ReLU(),
@@ -300,7 +309,7 @@ def create_AlexNet_With_L2Pool():
     nn.Dropout(p=0.5),
     # 最后是输出层。由于这⾥使⽤Fashion-MNIST，所以⽤类别数为10，⽽⾮论⽂中的1000
     nn.Linear(6144, 10))
-  X = torch.randn(1, 1, 224, 224)
+  X = torch.randn(1, 3, 224, 224)
   for layer in net:
     X=layer(X)
     print(layer.__class__.__name__,'output shape:\t',X.shape)
@@ -320,7 +329,7 @@ def nin_block(in_channels, out_channels, kernel_size, strides, padding):
 def create_NinNet():
   print("create NinNet")
   net = nn.Sequential(
-    nin_block(1, 96, kernel_size=11, strides=4, padding=0),
+    nin_block(3, 96, kernel_size=11, strides=4, padding=0),
     nn.MaxPool2d(3, stride=2),
     nin_block(96, 256, kernel_size=5, strides=1, padding=2),
     nn.MaxPool2d(3, stride=2),
@@ -330,7 +339,7 @@ def create_NinNet():
     nin_block(384, 10, kernel_size=3, strides=1, padding=1),
     nn.AdaptiveAvgPool2d((1, 1)),
     nn.Flatten())
-  X = torch.randn(1, 1, 224, 224)
+  X = torch.randn(1, 3, 224, 224)
   for layer in net:
     X=layer(X)
     print(layer.__class__.__name__,'output shape:\t',X.shape)
@@ -361,7 +370,7 @@ class Inception(nn.Module):
 def create_GoogLeNet():
   print("create GoogLeNet")
   b1 = nn.Sequential(
-    nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3),
+    nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3),
     nn.ReLU(),
     nn.MaxPool2d(kernel_size=3, stride=2, padding=1))
 
@@ -393,7 +402,7 @@ def create_GoogLeNet():
   
   net = nn.Sequential(b1, b2, b3, b4, b5, nn.Linear(1024, 10))
 
-  X = torch.rand(size=(1, 1, 96, 96))
+  X = torch.rand(size=(1, 3, 96, 96))
   for layer in net:
     X = layer(X)
     print(layer.__class__.__name__,'output shape:\t', X.shape)
@@ -439,7 +448,7 @@ def resnet_block(input_channels, num_channels, num_residuals,
 
 
 def create_ResNet():
-    b1 = nn.Sequential(nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3),
+    b1 = nn.Sequential(nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3),
                                  nn.BatchNorm2d(64), nn.ReLU(), 
                                  nn.MaxPool2d(kernel_size=3, stride=2, 
                                               padding=1))
@@ -450,7 +459,7 @@ def create_ResNet():
     net = nn.Sequential(b1, b2, b3, b4, b5, 
                         nn.AdaptiveAvgPool2d((1, 1)),
                         nn.Flatten(), nn.Linear(512, 10))
-    X = torch.rand(size=(1, 1, 224, 224))
+    X = torch.rand(size=(1, 3, 224, 224))
     for layer in net:
         X = layer(X)
         print(layer.__class__.__name__,'output shape:\t', X.shape)
@@ -468,8 +477,7 @@ def get_dataloader_workers():
 def pytorchvision_load_data(batch_size, data_set_name, resize=None):
     """Download the Fashion-MNIST dataset and then load it into memory.
     Defined in :numref:`sec_fashion_mnist`"""
-    trans = [transforms.Grayscale(num_output_channels=1),
-             transforms.ToTensor()]
+    trans = [transforms.ToTensor()]
     if resize:
         trans.insert(0, transforms.Resize(resize))
     trans = transforms.Compose(trans)
@@ -523,5 +531,5 @@ def main(model_name, data_set_name):
 
 if __name__ == "__main__":
     print("call main")
-    main("ResNet", "CIFAR_10")
+    main("NinNet", "CIFAR_10")
     print("main finished")
