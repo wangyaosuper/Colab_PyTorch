@@ -127,8 +127,8 @@ def store_model(net, optimizer, epoch, train_acc, test_acc,
 
     shanghai = pytz.timezone("Asia/Shanghai")
     now = datetime.datetime.now(shanghai)
-    fmt = '%Y-%m-%d %H:%M:%S %Z%z'
-    s = now.strftime(fmt)
+    fmt = '%Y%m%d_%H%M%S'
+    s = (now.strftime(fmt))[2:]
     """
     #sec = now.replace(tzinfo=dateutil.tz.gettz("Asina/Shanghai")).timestamp()
     sec = now.replace(tzinfo=pytz.timezone("Asia/Shanghai")).timestamp()
